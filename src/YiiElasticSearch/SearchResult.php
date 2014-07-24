@@ -67,6 +67,9 @@ class SearchResult extends Document
      */
     public function getField($field)
     {
-        return $this->_fields[$field];
+        if (isset($this->_fields[$field]))
+            return $this->_fields[$field];
+
+        return [];
     }
 }

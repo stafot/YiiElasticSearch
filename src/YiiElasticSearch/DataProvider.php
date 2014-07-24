@@ -34,7 +34,7 @@ class DataProvider extends CDataProvider
     /**
      * @var ResultSet the search result set
      */
-    protected $resultSet;
+    public $resultSet;
 
     /**
      * @var mixed the fetched data
