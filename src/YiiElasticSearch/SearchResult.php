@@ -22,11 +22,9 @@ class SearchResult extends Document
     protected $_score;
 
     /**
-     * An array with the selected field in the result
-     * useful with dynamic fields
-     * @var array
+     * @var array the script_fields
      */
-    protected $_fields;
+    protected $_scriptFields;
 
     /**
      * Initialize the search result
@@ -41,7 +39,7 @@ class SearchResult extends Document
         $this->_id = $result['_id'];
         $this->_score = $result['_score'];
         $this->_source = $result['_source'];
-        $this->_fields = isset($result['fields']) ? $result['fields'] : [];
+        $this->_scriptFields = isset($result['fields']) ? $result['fields'] : array();
     }
 
     /**
@@ -61,15 +59,10 @@ class SearchResult extends Document
     }
 
     /**
-     * Return the value of the field from the field list
-     * @param  string $field
-     * @return mixed
+     * @return array of the Script fields
      */
-    public function getField($field)
+    public function getScriptFields()
     {
-        if (isset($this->_fields[$field]))
-            return $this->_fields[$field];
-
-        return [];
+        return $this->_scriptFields;
     }
 }

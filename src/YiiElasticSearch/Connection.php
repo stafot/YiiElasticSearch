@@ -100,9 +100,9 @@ class Connection extends ApplicationComponent
      */
     public function index(DocumentInterface $document, $async = false)
     {
-        $url = $document->getIndex().'/'.$document->getType().'/'.$document->getId();
         $client = $async ? $this->getAsyncClient() : $this->getClient();
-        $request = $client->put($url)->setBody(json_encode($document->getSource()));
+        $request = $client->put($document->getUrl())->setBody(json_encode($document->getSource()));
+
         return $this->perform($request, $async);
     }
 
@@ -115,9 +115,9 @@ class Connection extends ApplicationComponent
      */
     public function delete(DocumentInterface $document, $async = false)
     {
-        $url = $document->getIndex().'/'.$document->getType().'/'.$document->getId();
         $client = $async ? $this->getAsyncClient() : $this->getClient();
-        $request = $client->delete($url);
+        $request = $client->delete($document->getUrl());
+
         return $this->perform($request, $async);
     }
 
@@ -173,8 +173,8 @@ class Connection extends ApplicationComponent
         }
         catch (\Guzzle\Http\Exception\BadResponseException $e) {
             $body = $e->getResponse()->getBody(true);
-            if(($msg = json_decode($body))!==null) {
-                throw new \CException($msg->error);
+            if(($msg = json_decode($body))!==null && isset($msg->error)) {
+                throw new \CException(is_object($msg->error) ? $msg->error->reason : $msg->error);
             } else {
                 throw new \CException($e);
             }

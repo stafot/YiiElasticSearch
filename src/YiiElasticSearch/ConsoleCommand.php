@@ -48,6 +48,10 @@ class ConsoleCommand extends CConsoleCommand
      * @var bool whether to only perform the command if target does not exist. Default is false.
      */
     public $skipExisting = false;
+    /**
+     * @var string addition options for a creating index
+     */
+    public $options = '{}';
 
     /**
      * @return string help for this command
@@ -129,7 +133,9 @@ EOD;
 
         $model  = $this->getModel();
         $table  = $model->tableName();
-        $count  = $model->count();
+        $provider = new \CActiveDataProvider($model);
+        $count = $provider->totalItemCount;
+
         $step   = $count > 5 ? floor($count/5) : 1;
         $index  = Yii::app()->elasticSearch->indexPrefix.$model->elasticIndex;
         $type   = $model->elasticType;
@@ -151,7 +157,6 @@ EOD;
 
         $this->message("Adding $count '{$this->model}' records from table '$table' to index '$index'\n 0% ", false);
 
-        $provider = new \CActiveDataProvider($model);
         $iterator = new \CDataProviderIterator($provider);
         foreach($iterator as $record) {
             $record->indexElasticDocument();
@@ -195,9 +200,9 @@ EOD;
             $this->usageError("Invalid JSON in $map");
         }
 
-        $body = json_encode(array(
+        $body = json_encode(\CMap::mergeArray(array(
             'mappings' => $mapping,
-        ));
+        ), json_decode($this->options, true)));
 
         $this->performRequest($elastic->client->put($index, array("Content-type" => "application/json"))->setBody($body));
 
@@ -354,8 +359,8 @@ EOD;
             $request->send();
         } catch (\Guzzle\Http\Exception\BadResponseException $e) {
             $body = $e->getResponse()->getBody(true);
-            if(($msg = json_decode($body))!==null) {
-                $this->message($msg->error);
+            if(($msg = json_decode($body))!==null && isset($msg->error)) {
+                $this->message(is_object($msg->error) ? $msg->error->reason : $msg->error);
             } else {
                 $this->message($e->getMessage());
             }
