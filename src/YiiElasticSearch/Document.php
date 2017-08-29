@@ -2,7 +2,11 @@
 
 namespace YiiElasticSearch;
 
-use \Yii as Yii;
+use ArrayAccess;
+use Countable;
+use Exception;
+use IteratorAggregate;
+use Yii;
 
 /**
  * Represents a document that can be added to and retrieved from elastic search
@@ -14,8 +18,11 @@ use \Yii as Yii;
  * @licence MIT
  * @package YiiElasticSearch
  */
-class Document implements DocumentInterface, \ArrayAccess, \Countable, \IteratorAggregate
+class Document implements DocumentInterface, ArrayAccess, Countable, IteratorAggregate
 {
+    public $routing = null;
+    public $timestamp = null;
+
     /**
      * @var Connection the elasticSearchConnection to use for this document
      */
@@ -53,9 +60,11 @@ class Document implements DocumentInterface, \ArrayAccess, \Countable, \Iterator
     public function getConnection()
     {
         if ($this->_connection === null) {
-            if (Yii::app()->hasComponent('elasticSearch'))
+            // Not a nice way to expect a certain component
+            if (Yii::app()->hasComponent('elasticSearch')) {
                 return Yii::app()->getComponent('elasticSearch');
-            throw new \Exception(__CLASS__." expects an 'elasticSearch' application component");
+            }
+            throw new Exception(__CLASS__." expects an 'elasticSearch' application component");
         }
         return $this->_connection;
     }
@@ -159,6 +168,21 @@ class Document implements DocumentInterface, \ArrayAccess, \Countable, \Iterator
     public function setSource($data)
     {
         $this->_source = $data;
+    }
+
+    public function getExceptionsToIgnore()
+    {
+        return $this->connection->exceptionsToIgnore;
+    }
+
+    public function getTimeout()
+    {
+        return $this->connection->timeout;
+    }
+
+    public function getConnectTimeout()
+    {
+        return $this->connection->connectTimeout;
     }
 
     /**

@@ -2,10 +2,11 @@
 
 namespace YiiElasticSearch;
 
-use \CApplicationComponent as ApplicationComponent;
-
-use \Yii as Yii;
-
+use CApplicationComponent as ApplicationComponent;
+use CDataProvider;
+use CDataProviderIterator;
+use Elasticsearch\ClientBuilder;
+use Yii;
 
 /**
  * The elastic search connection is responsible for actually interacting with elastic search,
@@ -16,7 +17,18 @@ use \Yii as Yii;
  *  'components' => array(
  *      'elasticSearch' => array(
  *          'class' => "YiiElasticSearch\\Connection",
- *          'baseUrl' => 'http://localhost:9200/',
+ *          'hosts' => [
+ *              'https://BASE64(user):BASE64(pass)@localhost:9200'
+ *              --- OR ---
+ *              [
+ *                  'host'=>'localhost',
+ *                  'port'=>'9200',
+ *                  'scheme' => 'https'
+ *                  'username'=>'user',
+ *                  'passwrod'=>'pass',
+ *                  ....
+ *              ]
+ *          ],
  *      )
  *  ),
  * </pre>
@@ -28,9 +40,17 @@ use \Yii as Yii;
 class Connection extends ApplicationComponent
 {
     /**
-     * @var string the base URL that elastic search is available from
+     * ElasticSearchclient host configuration.
+     * @see Elastisearch\ClientBuilder
+     * @var array
      */
-    public $baseUrl = "http://localhost:9200/";
+    public $hosts = ["http://localhost:9200/"];
+
+    /**
+     * Number of retries on opening conection
+     * @var integer
+     */
+    public $retries = 2;
 
     /**
      * @var boolean whether or not to profile elastic search requests
@@ -43,6 +63,32 @@ class Connection extends ApplicationComponent
     public $indexPrefix = '';
 
     /**
+     * If true enalbes reposne verbosity. Debuga data should be retrived
+     * via document respective property
+     * @var boolean
+     */
+    public $debug = false;
+
+    /**
+     * Set the request timeout
+     * @var integer
+     */
+    public $timeout = 10;
+
+    /**
+     * Set the connect timeout
+     * @var integer
+     */
+    public $connectTimeout = 5;
+
+    /**
+     * Retry on these http response codes and retry until the number of max
+     * retries are met.
+     * @var array
+     */
+    public $exceptionsToIgnore = [404];
+
+    /**
      * @var \Guzzle\Http\Client the guzzle client
      */
     protected $_client;
@@ -53,31 +99,18 @@ class Connection extends ApplicationComponent
     protected $_asyncClient;
 
     /**
-     * @param \Guzzle\Http\Client $asyncClient
-     */
-    public function setAsyncClient($asyncClient)
-    {
-        $this->_asyncClient = $asyncClient;
-    }
-
-    /**
      * @return \Guzzle\Http\Client
      */
     public function getAsyncClient()
     {
         if ($this->_asyncClient === null) {
-            $this->_asyncClient = new \Guzzle\Http\Client($this->baseUrl);
-            $this->_asyncClient->addSubscriber(new \Guzzle\Plugin\Async\AsyncPlugin());
+            $this->_asyncClient = ClientBuilder::fromConfig([
+                'hosts' => $this->hosts,
+                'retries' => $this->retries,
+                'handler' => ClientBuilder::defaultHandler()
+            ], false);
         }
         return $this->_asyncClient;
-    }
-
-    /**
-     * @param \Guzzle\Http\Client $client
-     */
-    public function setClient($client)
-    {
-        $this->_client = $client;
     }
 
     /**
@@ -86,7 +119,10 @@ class Connection extends ApplicationComponent
     public function getClient()
     {
         if ($this->_client === null) {
-            $this->_client = new \Guzzle\Http\Client($this->baseUrl);
+            $this->_client = ClientBuilder::fromConfig([
+                'hosts' => $this->hosts,
+                'retries' => $this->retries
+            ], false);
         }
         return $this->_client;
     }
@@ -100,14 +136,56 @@ class Connection extends ApplicationComponent
      */
     public function index(DocumentInterface $document, $async = false)
     {
-        $client = $async ? $this->getAsyncClient() : $this->getClient();
-        $request = $client->put($document->getUrl())->setBody(json_encode($document->getSource()));
+        $client = $this->getAsyncClient();
+        $params = $this->getRequestParams($document, $async);
+        $response = $client->index($params);
 
-        return $this->perform($request, $async);
+        return $response;
     }
 
     /**
-     * Remove a document from elastic search
+     * Bulk indexing
+     * @param  CDataProvider   $documents A data providers with documents that
+     *                                    implementing the DocumentInterface
+     * @param  integer $batchSize The batch size. If there are more documents than the
+     * @return array             [description]
+     */
+    public function bulkIndex(CDataProvider $documents, $batchSize = 500)
+    {
+        $client = $this->getClient();
+        $params = ['body' => []];
+        $responses = [];
+
+        $iterator = new CDataProviderIterator($documents, $batchSize);
+        $currentPage = 0;
+        foreach ($iterator as $document) {
+            if ($iterator->dataProvider->pagination->getCurrentPage(false) !== $currentPage) {
+                // Send the batch
+                $responses["batch {$currentPage}"] = $client->bulk($params);
+                $params = ['body' => []];
+            }
+
+            $params['body'][] = [
+                 'index' => [
+                     '_type' => $document->type,
+                     '_index' => $document->index,
+                     '_parent' => $document->parent,
+                     '_routing' => $document->routing,
+                     '_id' => $document->id,
+                     '_timestamp' => $document->timestamp,
+                 ]
+            ];
+            $params['body'][] = $document->getSource();
+            $currentPage = $iterator->dataProvider->pagination->getCurrentPage(false);
+        }
+        if (!empty($params['body'])) {
+            $responses["batch {$currentPage}"] = $client->bulk($params);
+        }
+        return $responses;
+    }
+
+    /**
+     * Remove a document from elastic searchfgfgghthtnmggg
      * @param DocumentInterface $document the document to remove
      * @param bool $async whether or not to perform an async request
      *
@@ -236,5 +314,38 @@ class Connection extends ApplicationComponent
             $result = str_replace($char, '\\' . $char, $result);
         }
         return trim($result);
+    }
+
+    public function getRequestParams(DocumentInterface $document)
+    {
+        $params = [
+            'type' => $document->type,
+            'index' => $document->index,
+            'parent' => $document->parent,
+            'routing' => $document->routing,
+            'id' => $document->id,
+            'body' => $document->source,
+            'timestamp' => $document->timestamp,
+            'client' => $this->getPerRequestConfig($document, $async)
+        ];
+
+
+        return $params;
+    }
+
+    public function getPerRequestConfig(DocumentInterface $document, $async = false)
+    {
+        $params = [
+            'igonore' => $document->exceptionsToIgnore,
+            'verbose' => $document->connection->debug ? true : false,
+            'timeout' => $document->timeout,
+            'connect_timeout' => $document->connectTimeout
+        ];
+
+        if ($async) {
+            $params['future'] = 'lazy';
+        }
+
+        return $params;
     }
 }

@@ -1,20 +1,30 @@
 {
     "name": "codemix/yiielasticsearch",
-    "description": "Elastic Search client for Yii",
+    "description": "Elastic Search client for Yii 1.1",
+    "keywords": ["search","client", "elasticsearch","yii", "Yii 1.1"],
     "license": "MIT",
     "authors": [
         {
             "name": "Charles Pick",
             "email": "charles.pick@gmail.com"
-        }
+        },
+	{
+	    "name": "Yiorgos Tavantzopoulos",
+	    "email": "g.tavantzopoulos@gmail.com"
+	}
     ],
     "require": {
-        "php": ">=5.3.0",
-        "guzzle/guzzle": "*"
+        "php": ">=5.4.0",
+    	"elasticsearch/elasticsearch": "~2.0"
+    },
+    "require-dev": {
+        "dimvic/composer-installers": "dev-master",
+        "phpunit/phpunit": "~6.0",
+        "yiisoft/yii": "~1.1"
     },
     "autoload": {
-        "psr-0": {
-            "YiiElasticSearch": "src/"
+        "psr-4": {
+            "YiiElasticSearch\\": "src/YiiElasticSearch/"
         }
     }
 }
