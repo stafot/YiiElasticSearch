@@ -2,11 +2,14 @@
 
 namespace YiiElasticSearch;
 
+use ArrayObject;
+use Exception;
+
 /**
  * Represents a search request to elasticsearch
  *
  * This class is mainly an OO container for search parameters.
- * See http://www.elasticsearch.org/guide/reference/api/search/
+ * @see https://www.elastic.co/guide/en/elasticsearch/client/php-api/2.0/ElasticsearchPHP_Endpoints.html#Elasticsearch_Clientsearch_search
  * for available parameters.
  *
  * You can set arbitrary properties:
@@ -23,22 +26,159 @@ namespace YiiElasticSearch;
  * @licence MIT
  * @package YiiElasticSearch
  */
-class Search implements \ArrayAccess, \Countable
+class Search extends ArrayObject
 {
     /**
-     * @var string the name of the index to search within
+     * @var string|array A list of index names to search; use `_all` or
      */
     public $index;
-
     /**
-     * @var string the name of the document type within the index
+     * document types to search. Empty searching in `all`
+     * @var string|array
      */
     public $type;
+    /**
+     * @var string The analyzer to use for the query string
+     */
+    public $analyzer;
+    /**
+     * @var boolean Specify whether wildcard and prefix queries should be analyzed
+     */
+    public $analyze_wildcard = false;
+    /**
+     * @var string The default operator for query string query (AND or OR) (AND,OR)
+     */
+    public $default_operator = Enum\Operator::OP_OR;
+    /**
+     * @var string The field to use as default where no field prefix is given in the query string
+     */
+    public $df;
+    /**
+     * @var booolean Specify whether to return detailed information about score computation as part of a hit
+     */
+    public $explain = false;
+    /**
+     * A list of fields to return as part of a hit
+     * @var array
+     */
+    public $fields = [];
+    /**
+     * list of fields to return as the field data representation of a field for each hit
+     * @var array
+     */
+    public $fielddata_fields = [];
+    /**
+     * @var integer Starting offset
+     */
+    public $from = 0;
+    /**
+     * @var  When performed on multiple indices, allows to ignore `missing` ones
+     */
+    public $ignore_indices = 0;
+    /**
+     * A list of index boosts
+     * @var array
+     */
+    public $indices_boost = [];
+    /**
+     * Enable query cache for this request
+     * @var boolean
+     */
+    public $query_cache = false;
+    /**
+    * Whether specified concrete indices should be ignored when unavailable (missing or closed)
+    * @var boolean
+    */
+    public $ignore_unavailable = true;
+    /**
+    * Whether to ignore if a wildcard indices expression resolves into no concrete indices.
+    * (This includes `_all` string or when no indices have been specified)
+    * @var boolean
+    */
+    public $allow_no_indices;
+    /**
+    * Whether to expand wildcard expression to concrete indices that are open, closed or both.(default: open)
+    * @var string
+    */
+    public $expand_wildcards = Enum\Wildcard::EXPAND_OPEN;
+    /**
+     * Specify whether format-based query failures (such as providing text to a numeric field) should be ignored
+     * @var boolean
+     */
+    public $lenient;
+    /**
+     * Specify whether query terms should be lowercased
+     * @var booleab
+     */
+    public $lowercase_expanded_terms;
+    /**
+     * Specify the node or shard the operation should be performed on (default: random)
+     * @var string
+     */
+    public $preference = 'random';
+    /**
+     * Query in the Lucene query string syntax
+     * @var string
+     */
+    public $q;
+    /**
+     * A list of specific routing values
+     * @var array
+     */
+    public $routing = [];
+    /**
+     * Specify how long a consistent (timestamp) view of the index should be maintained for scrolled search
+     * @var integer
+     */
+    public $scroll;
+    /**
+     * Search operation type
+     * @see YiiElasticSearch\Enum\SearchType
+     * @var string
+     */
+    public $search_type;
+    /**
+     * Number of hits to return (default: 10)
+     * @var integer
+     */
+    public $size = 10;
+    /**
+     * An key value pair array of <field>:<direction>
+     * @var array
+     */
+    public $sort;
+    /**
+     * The URL-encoded request definition using the Query DSL (instead of using request body)
+     * @var string
+     */
+    public $source;
+    /**
+     * True or false to return the _source field or not, or a list of
+     * @var boolean|array
+     */
+    public $_source;
+    /**
+     * A list of fields to exclude from the returned _source field
+     * @var array
+     */
+    public $_source_include = [];
+    /**
+     * A list of fields to extract and return from the _source field
+     * @var array
+     */
+    public $_source_exclude = [];
+    /**
+     * The maximum number of documents to collect for each shard, upon reaching which the query execution will
+     * terminate early
+     * @var integer
+     */
+    public $terminate_after;
 
     /**
-     * @var array the internal data storage
+     * the internal data storage
+     * @var array
      */
-    private $data = array();
+    protected $mData = array();
 
     /**
      * @param string|null $index the name of the index to search within
@@ -47,9 +187,11 @@ class Search implements \ArrayAccess, \Countable
      */
     public function __construct($index = null, $type = null, $data = array())
     {
+        $this->mData = $data;
         $this->index = $index;
         $this->type = $type;
-        $this->data = $data;
+
+        parent::__construct($this->mData, ArrayObject::ARRAY_AS_PROPS);
     }
 
     /**
@@ -57,92 +199,7 @@ class Search implements \ArrayAccess, \Countable
      */
     public function toArray()
     {
-        return $this->data;
-    }
-
-    /**
-     * (PHP 5 &gt;= 5.1.0)<br/>
-     * Count elements of an object
-     * @link http://php.net/manual/en/countable.count.php
-     * @return int The custom count as an integer.
-     * </p>
-     * <p>
-     * The return value is cast to an integer.
-     */
-    public function count()
-    {
-        return count($this->data);
-    }
-
-
-    /**
-     * (PHP 5 &gt;= 5.0.0)<br/>
-     * Whether a offset exists
-     * @link http://php.net/manual/en/arrayaccess.offsetexists.php
-     *
-     * @param mixed $offset <p>
-     * An offset to check for.
-     * </p>
-     *
-     * @return boolean true on success or false on failure.
-     * </p>
-     * <p>
-     * The return value will be casted to boolean if non-boolean was returned.
-     */
-    public function offsetExists($offset)
-    {
-        return array_key_exists($offset,$this->data);
-    }
-
-    /**
-     * (PHP 5 &gt;= 5.0.0)<br/>
-     * Offset to retrieve
-     * @link http://php.net/manual/en/arrayaccess.offsetget.php
-     *
-     * @param mixed $offset <p>
-     * The offset to retrieve.
-     * </p>
-     *
-     * @return mixed Can return all value types.
-     */
-    public function offsetGet($offset)
-    {
-        return $this->data[$offset];
-    }
-
-    /**
-     * (PHP 5 &gt;= 5.0.0)<br/>
-     * Offset to set
-     * @link http://php.net/manual/en/arrayaccess.offsetset.php
-     *
-     * @param mixed $offset <p>
-     * The offset to assign the value to.
-     * </p>
-     * @param mixed $value <p>
-     * The value to set.
-     * </p>
-     *
-     * @return void
-     */
-    public function offsetSet($offset, $value)
-    {
-        $this->data[$offset] = $value;
-    }
-
-    /**
-     * (PHP 5 &gt;= 5.0.0)<br/>
-     * Offset to unset
-     * @link http://php.net/manual/en/arrayaccess.offsetunset.php
-     *
-     * @param mixed $offset <p>
-     * The offset to unset.
-     * </p>
-     *
-     * @return void
-     */
-    public function offsetUnset($offset)
-    {
-        unset($this->data[$offset]);
+        return $this->getArrayCopy();
     }
 
     /**
@@ -154,9 +211,11 @@ class Search implements \ArrayAccess, \Countable
      */
     public function __get($name)
     {
-        if (array_key_exists($name,$this->data))
-            return $this->data[$name];
-        throw new \Exception(__CLASS__.' has no such property: '.$name);
+        if ($this->offsetExists($name)) {
+            return $this->offsetGet($name);
+        }
+
+        throw new Exception(self::class." has no such property: {$name}");
     }
 
     /**
@@ -166,7 +225,7 @@ class Search implements \ArrayAccess, \Countable
      */
     public function __set($name, $value)
     {
-        $this->data[$name] = $value;
+        $this->offsetSet($name, $value);
     }
 
     /**
@@ -177,7 +236,7 @@ class Search implements \ArrayAccess, \Countable
      */
     public function __isset($name)
     {
-        return array_key_exists($name,$this->data);
+        return $this->offsetExists($name);
     }
 
     /**
@@ -186,6 +245,10 @@ class Search implements \ArrayAccess, \Countable
      */
     public function __unset($name)
     {
-        unset($this->data[$name]);
+        if ($this->offsetExists($name)) {
+            $this->offsetUnset($name);
+        } else {
+            throw new Exception(self::class." has no such property: {$name}");
+        }
     }
 }

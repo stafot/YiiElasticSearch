@@ -2,7 +2,7 @@
 
 namespace YiiElasticSearch;
 
-use \CDataProvider as CDataProvider;
+use CDataProvider;
 
 /**
  * Data provider that can retrieve results from elastic search.
@@ -48,11 +48,15 @@ class DataProvider extends CDataProvider
      */
     public function __construct($model, $config = array())
     {
-        if (is_string($model))
+        if (is_string($model)) {
             $model = new $model;
+        }
+
         $this->model = $model;
-        foreach($config as $attribute => $value)
+
+        foreach ($config as $attribute => $value) {
             $this->{$attribute} = $value;
+        }
     }
 
     /**
@@ -68,7 +72,7 @@ class DataProvider extends CDataProvider
             );
         }
 
-        if(!$search->index) {
+        if (!$search->index) {
             $search->index = $this->model->elasticIndex;
         }
 

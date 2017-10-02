@@ -172,17 +172,17 @@ class Document implements DocumentInterface, ArrayAccess, Countable, IteratorAgg
 
     public function getExceptionsToIgnore()
     {
-        return $this->connection->exceptionsToIgnore;
+        return $this->getConnection()->exceptionsToIgnore;
     }
 
     public function getTimeout()
     {
-        return $this->connection->timeout;
+        return $this->getConnection()->timeout;
     }
 
     public function getConnectTimeout()
     {
-        return $this->connection->connectTimeout;
+        return $this->getConnection()->connectTimeout;
     }
 
     /**

@@ -58,6 +58,7 @@ class Connection extends ApplicationComponent
     public $enableProfiling = false;
 
     /**
+     * @TODO Implement this
      * @var string an optional prefix for the index. Default is ''.
      */
     public $indexPrefix = '';
@@ -89,6 +90,11 @@ class Connection extends ApplicationComponent
     public $exceptionsToIgnore = [404];
 
     /**
+     * @var array|string|Psr\Log\LoggerInterface
+     */
+    protected $mLogger = null;
+
+    /**
      * @var \Guzzle\Http\Client the guzzle client
      */
     protected $_client;
@@ -97,6 +103,14 @@ class Connection extends ApplicationComponent
      * @var \Guzzle\Http\Client the async guzzle client
      */
     protected $_asyncClient;
+
+    public function createDocument()
+    {
+        $doc = new Document();
+        $doc->setConnection($this);
+
+        return $doc;
+    }
 
     /**
      * @return \Guzzle\Http\Client
@@ -121,10 +135,25 @@ class Connection extends ApplicationComponent
         if ($this->_client === null) {
             $this->_client = ClientBuilder::fromConfig([
                 'hosts' => $this->hosts,
-                'retries' => $this->retries
+                'retries' => $this->retries,
+                'logger' => $this->getLogger(),
             ], false);
         }
         return $this->_client;
+    }
+
+    public function setLogger($logger)
+    {
+        $this->mLogger = $logger;
+    }
+
+    public function getLogger()
+    {
+        if ($this->mLogger instanceof Psr\Log\LoggerInterface) {
+            return $this->mLogger;
+        }
+
+        return ($this->mLogger = Yii::createComponent($this->mLogger));
     }
 
     /**
@@ -136,9 +165,11 @@ class Connection extends ApplicationComponent
      */
     public function index(DocumentInterface $document, $async = false)
     {
+        $profileKey = $this->beginProfilling(__METHOD__, sha1(json_encode($document->getSource())));
         $client = $this->getAsyncClient();
         $params = $this->getRequestParams($document, $async);
         $response = $client->index($params);
+        $this->endProfilling($profileKey);
 
         return $response;
     }
@@ -152,6 +183,7 @@ class Connection extends ApplicationComponent
      */
     public function bulkIndex(CDataProvider $documents, $batchSize = 500)
     {
+        $profileKey = $this->beginProfilling(__METHOD__, uniqid(true, "BATCH"));
         $client = $this->getClient();
         $params = ['body' => []];
         $responses = [];
@@ -169,7 +201,7 @@ class Connection extends ApplicationComponent
                  'index' => [
                      '_type' => $document->type,
                      '_index' => $document->index,
-                     '_parent' => $document->parent,
+                     '_parent' => $document->getParent(),
                      '_routing' => $document->routing,
                      '_id' => $document->id,
                      '_timestamp' => $document->timestamp,
@@ -181,6 +213,8 @@ class Connection extends ApplicationComponent
         if (!empty($params['body'])) {
             $responses["batch {$currentPage}"] = $client->bulk($params);
         }
+
+        $this->endProfilling($profileKey);
         return $responses;
     }
 
@@ -193,10 +227,12 @@ class Connection extends ApplicationComponent
      */
     public function delete(DocumentInterface $document, $async = false)
     {
+        $profileKey = $this->beginProfilling(__METHOD__, sha1(json_encode($document->getSource())));
         $client = $async ? $this->getAsyncClient() : $this->getClient();
-        $request = $client->delete($document->getUrl());
-
-        return $this->perform($request, $async);
+        $params = $this->getRequestParams($document, $async);
+        $response = $client->delete($params);
+        $this->endProfilling($profileKey);
+        return $response;
     }
 
     /**
@@ -207,18 +243,9 @@ class Connection extends ApplicationComponent
      */
     public function search(Search $search)
     {
-        $query = json_encode($search->toArray());
-        $url = array();
-        if ($search->index)
-            $url[] = $this->indexPrefix.$search->index;
-        if ($search->type)
-            $url[] = $search->type;
-
-        $url[] = "_search";
-        $url = implode("/",$url);
-
+        $profileKey = $this->beginProfilling(__METHOD__, sha1(json_encode($search->toArray())));
         $client = $this->getClient();
-        $request = $client->post($url, null, $query);
+        $request = $client->search($params);
         $response = $this->perform($request);
         return new ResultSet($search, $response);
     }
@@ -233,7 +260,7 @@ class Connection extends ApplicationComponent
      * @return \Guzzle\Http\Message\Response|mixed the response from elastic search
      * @throws \Exception
      */
-    public function perform(\Guzzle\Http\Message\RequestInterface $request, $async = false)
+    public function perform($namespace, $async = false)
     {
         try {
             $profileKey = null;
@@ -259,6 +286,24 @@ class Connection extends ApplicationComponent
         }
         catch(\Guzzle\Http\Exception\ClientErrorResponseException $e) {
             throw new \CException($e->getResponse()->getBody(true));
+        }
+    }
+
+    protected function beginProfilling($method, $hash)
+    {
+        $profileKey = false;
+        if ($this->enableProfiling) {
+            $profileKey = "{$method}()";
+            Yii::beginProfile($profileKey);
+        }
+
+        return $profileKey;
+    }
+
+    protected function endProfilling($profileKey)
+    {
+        if ($this->enableProfiling) {
+            Yii::endProfile($profileKey);
         }
     }
 
@@ -316,15 +361,15 @@ class Connection extends ApplicationComponent
         return trim($result);
     }
 
-    public function getRequestParams(DocumentInterface $document)
+    public function getRequestParams(DocumentInterface $document, $async = false)
     {
         $params = [
-            'type' => $document->type,
-            'index' => $document->index,
-            'parent' => $document->parent,
+            'type' => $document->getType(),
+            'index' => $document->getIndex(),
+            'parent' => $document->getParent(),
             'routing' => $document->routing,
-            'id' => $document->id,
-            'body' => $document->source,
+            'id' => $document->getId(),
+            'body' => $document->getSource(),
             'timestamp' => $document->timestamp,
             'client' => $this->getPerRequestConfig($document, $async)
         ];
@@ -336,10 +381,10 @@ class Connection extends ApplicationComponent
     public function getPerRequestConfig(DocumentInterface $document, $async = false)
     {
         $params = [
-            'igonore' => $document->exceptionsToIgnore,
-            'verbose' => $document->connection->debug ? true : false,
-            'timeout' => $document->timeout,
-            'connect_timeout' => $document->connectTimeout
+            'igonore' => $document->getExceptionsToIgnore(),
+            'verbose' => $document->getConnection()->debug ? true : false,
+            'timeout' => $document->getTimeout(),
+            'connect_timeout' => $document->getConnectTimeout()
         ];
 
         if ($async) {
